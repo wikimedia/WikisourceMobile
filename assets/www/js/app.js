@@ -186,7 +186,7 @@ window.app = function() {
 
 	function getCurrentUrl() {
 		if(app.curPage) {
-			return app.urlForTitle(app.curPage.title);
+			return app.curPage.getCanonicalUrl();
 		} else {
 			return null;
 		}
