@@ -1,4 +1,4 @@
-# Wikipedia Mobile
+# Wikisource Mobile
 
 ## Getting started
 
@@ -12,7 +12,7 @@
 
 ### Checking out the source code
 
-1. Create your own fork of the <a href="https://github.com/wikimedia/WikipediaMobile" target="_blank">Wikipedia</a> code.
+1. Create your own fork of the <a href="https://github.com/wikimedia/WikisourceMobile" target="_blank">Wikisource</a> code.
 2. Clone your fork onto your computer.
                             
 ### Setting up the project
