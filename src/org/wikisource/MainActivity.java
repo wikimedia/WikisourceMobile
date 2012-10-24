@@ -3,7 +3,6 @@ package org.wikisource;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.os.Bundle;
-import android.util.Log;
 
 import org.apache.cordova.DroidGap;
 

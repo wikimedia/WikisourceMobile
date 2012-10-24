@@ -75,202 +75,290 @@
         return 'Wikipedia.' + lang + '.' + md5(title.replace(/_/g, ' '));
     }
 
+    // hack hack hack for l10n
     window.preferencesDB = {
         get: function (key) {
-            return 'en';
+            return navigator.userLanguage;
         }
     }
     window.ROOT_URL = '';
 
-    $(function () {
-        $(document).bind('mw-messages-ready', function () {
-            WinJS.UI.processAll().done(doStuff);
-        });
-        l10n.initLanguages();
+    function getLanguage() {
+        // @fixme whitelist languages, just in case!
+        return navigator.userLanguage.replace(/-.*$/, '');
+    }
 
-        function doStuff() {
-            $('#readInCmd')[0].winControl.label = mediaWiki.message('menu-language').plain();
-            $('#pinCmd')[0].winControl.label = mediaWiki.message('menu-win8-pin').plain();
-            $('#unpinCmd')[0].winControl.label = mediaWiki.message('menu-win8-unpin').plain();
-            $('#browserCmd')[0].winControl.label = mediaWiki.message('menu-open-browser').plain();
-            $('#offline').localize();
-
-            WinJS.Application.onsettings = function (e) {
-                e.detail.applicationcommands = {
-                    about: {
-                        title: mediaWiki.message('menu-about').plain(),
-                        href: "/about.html"
-                    }
-                };
-                WinJS.UI.SettingsFlyout.populateSettings(e);
+    var beenInitialized = false;
+    function setupApp() {
+        return new WinJS.Promise(function (complete, error, prog) {
+            if (beenInitialized) {
+                complete();
+                return;
             }
 
-            initHub('en');
-            // Handler for links!
-            $(document).on('click', 'a', function (event) {
-                var url = $(this).attr('href'),
-                    refMatches = url.match(/^#cite_note/),
-                    hashMatches = url.match(/^#/),
-                    wikiMatches = url.match(/^\/wiki\/(.*)/);
-                if (refMatches) {
-                    // Reference link
-                    var $ref = $(url).clone();
-                    showLightbox($ref, 'small');
-                    event.preventDefault();
-                } else if (hashMatches) {
+            $(document).bind('mw-messages-ready', function () {
+                WinJS.UI.processAll().done(doStuff);
+            });
+            l10n.initLanguages();
+
+            function doStuff() {
+                $('#content').append('<div id="subcontent"></div>'); // should we need this?
+
+                if ($('#appbar').length) {
+                    $('#readInCmd')[0].winControl.label = mediaWiki.message('menu-language').plain();
+                    $('#pinCmd')[0].winControl.label = mediaWiki.message('menu-win8-pin').plain();
+                    $('#unpinCmd')[0].winControl.label = mediaWiki.message('menu-win8-unpin').plain();
+                    $('#browserCmd')[0].winControl.label = mediaWiki.message('menu-open-browser').plain();
+                }
+                $('#offline').localize();
+
+                WinJS.Application.onsettings = function (e) {
+                    e.detail.applicationcommands = {
+                        about: {
+                            title: mediaWiki.message('menu-about').plain(),
+                            href: "/about.html"
+                        }
+                    };
+                    WinJS.UI.SettingsFlyout.populateSettings(e);
+                }
+
+                initHub(getLanguage());
+                // Handler for links!
+                $(document).on('click', 'a', function (event) {
+                    var url = $(this).attr('href'),
+                        refMatches = url.match(/^#cite_note/),
+                        hashMatches = url.match(/^#/),
+                        wikiMatches = url.match(/^\/wiki\/(.*)/);
+                    if (refMatches) {
+                        // Reference link
+                        var $ref = $(url).clone();
+                        showLightbox($ref, 'small');
+                        event.preventDefault();
+                    } else if (hashMatches) {
                         // no-op, but close any lightboxes first
-                    $('.lightbox-bg, .lightbox-fg').remove();
-                } else if (wikiMatches) {
+                        $('.lightbox-bg, .lightbox-fg').remove();
+                    } else if (wikiMatches) {
                         // Internal wiki-link
-                    $('.lightbox-bg, .lightbox-fg').remove();
-                    var lang = state.current().lang,
-                        title = decodeURIComponent(wikiMatches[1]);
-                    if ($(this).hasClass('image')) {
-                        // Image link
-                        showImage(lang, title);
+                        $('.lightbox-bg, .lightbox-fg').remove();
+                        var lang = state.current().lang,
+                            title = decodeURIComponent(wikiMatches[1]);
+                        if ($(this).hasClass('image')) {
+                            // Image link
+                            showImage(lang, title);
+                        } else {
+                            doLoadPage(lang, title);
+                        }
+                        event.preventDefault();
                     } else {
-                        doLoadPage(lang, title);
+                        // Remote or absolute link
+                        if (url.match(/^\/\//)) {
+                            // fixup for protocol-relative links
+                            url = 'https:' + url;
+                        } else if (url.match(/^\//)) {
+                            // fixup for local relative links
+                            url = 'https://' + state.current().lang + '.wikipedia.org' + url;
+                        }
+                        var uri = new Windows.Foundation.Uri(url);
+                        Windows.System.Launcher.launchUriAsync(uri);
+                        event.preventDefault();
                     }
+                });
+                $('#back').click(function () {
+                    //doShowHub();
+                    doGoBack();
+                }).bind('contextmenu', function (event) {
+                    // Catch touch context menu
                     event.preventDefault();
-                } else {
-                    // Remote or absolute link
-                    if (url.match(/^\/\//)) {
-                        // fixup for protocol-relative links
-                        url = 'https:' + url;
+                    showHistoryMenu(this);
+                });
+                $(document).bind('keydown', function (event) {
+                    // Backspace to go back
+                    if (event.keyCode == 8) {
+                        doGoBack();
+                        event.preventDefault();
                     }
-                    var uri = new Windows.Foundation.Uri(url);
-                    Windows.System.Launcher.launchUriAsync(uri);
-                    event.preventDefault();
-                }
-            });
-            $('#back').click(function () {
-                //doShowHub();
-                doGoBack();
-            }).bind('contextmenu', function (event) {
-                // Catch touch context menu
-                event.preventDefault();
-                showHistoryMenu(this);
-            });
-            $('#resultlist').bind('iteminvoked', function (event) {
-                var index = event.originalEvent.detail.itemIndex;
-                var selected = SearchResults.itemList.getItem(index);
-                console.log(selected);
-                if (!selected.data.title) {
-                    throw new Error("bad title");
-                }
-                doLoadPage(state.current().lang, selected.data.title);
-            });
-            $('#hub-list').bind('iteminvoked', function (event) {
-                var index = event.originalEvent.detail.itemIndex;
-                var selected = HubContents.groupedList.getItem(index);
-                if (selected.data.title) {
+                    if (event.ctrlKey && event.keyCode == 'F'.charCodeAt(0)) {
+                        if (state.current().type == 'article') {
+                            $('#findCmd').click();
+                            event.preventDefault();
+                        }
+                    }
+                });
+                $('#resultlist').bind('iteminvoked', function (event) {
+                    var index = event.originalEvent.detail.itemIndex;
+                    var selected = SearchResults.itemList.getItem(index);
+                    console.log(selected);
+                    if (!selected.data.title) {
+                        throw new Error("bad title");
+                    }
                     doLoadPage(state.current().lang, selected.data.title);
-                }
-            });
-            $(window).bind('resize', function () {
-                sizeContent();
-            });
-            $(window).resize();
-
-            $('#appbar').bind('beforeshow', function () {
-                var lang = state.current().lang,
-                    title = state.current().title;
-                if (Windows.UI.StartScreen.SecondaryTile.exists(tileId(lang, title))) {
-                    $("#pinCmd").hide();
-                    $("#unpinCmd").show();
-                } else {
-                    $("#unpinCmd").hide();
-                    $("#pinCmd").show();
-                }
-                if (state.current().type == 'article') {
-                    $('#pinCmd').removeAttr('disabled');
-                    $('#unpinCmd').removeAttr('disabled');
-                } else {
-                    $('#pinCmd').attr('disabled', 'disabled');
-                    $('#unpinCmd').attr('disabled', 'disabled');
-                }
-            });
-
-            $('#pinCmd').click(function () {
-                var lang = state.current().lang,
-                    title = state.current().title.replace(/_/g, ' '),
-                    shortName = title,
-                    displayName = title + ' - Wikipedia',
-                    tileOptions = Windows.UI.StartScreen.TileOptions.showNameOnLogo,
-                    uriLogo = new Windows.Foundation.Uri("ms-appx:///images/secondary-tile.png"),
-                    tileActivationArguments = "lang=" + lang + '&' + 'title=' + encodeURIComponent(title),
-                    tile = new Windows.UI.StartScreen.SecondaryTile(tileId(lang, title), shortName, displayName, tileActivationArguments, tileOptions, uriLogo);
-
-                var element = document.getElementById("pinCmd"),
-                    selectionRect = element.getBoundingClientRect();
-                tile.requestCreateAsync({ x: selectionRect.left, y: selectionRect.top }).then(function (isCreated) {
-                    if (isCreated) {
-                        console.log('tile is created');
-                        // Secondary tile successfully pinned.
-                    } else {
-                        console.log('tile is not created');
-                        // Secondary tile not pinned.
+                });
+                $('#hub-list').bind('iteminvoked', function (event) {
+                    var index = event.originalEvent.detail.itemIndex;
+                    var selected = HubContents.groupedList.getItem(index);
+                    if (selected.data.title) {
+                        doLoadPage(state.current().lang, selected.data.title);
                     }
                 });
-            });
-
-            $('#unpinCmd').click(function () {
-                var lang = state.current().lang,
-                    title = state.current().title.replace(/_/g, ' '),
-                    tile = Windows.UI.StartScreen.SecondaryTile(tileId(lang, title)),
-                    element = document.getElementById("unpinCmd"),
-                    selectionRect = element.getBoundingClientRect();
-                tile.requestDeleteAsync({ x: selectionRect.left, y: selectionRect.top });
-            });
-
-            $('#browserCmd').click(function () {
-                var url = articleUrl(state.current().lang, state.current().title),
-                    uri = new Windows.Foundation.Uri(url);
-                Windows.System.Launcher.launchUriAsync(uri);
-            });
-
-            $('#readInCmd').click(function () {
-                var current = state.current(),
-                    title = current.title,
-                    lang = current.lang,
-                    promise;
-                if (current.type == 'article') {
-                    promise = getLanguageLinks(lang, title);
-                } else {
-                    promise = getWikiLanguageLinks(lang);
-                }
-                promise.then(function (langlinks) {
-                    var div = document.createElement('div');
-                    langlinks.forEach(function (langlink) {
-                        var lang = langlink.lang,
-                            target = langlink.target,
-                            label = langlink.title + ' (' + lang + ')',
-                            button = document.createElement('button'),
-                            command = new WinJS.UI.MenuCommand(button, {
-                                label: label
-                            });
-                        command.addEventListener('click', function () {
-                            if (current.type == 'hub') {
-                                initHub(lang);
-                            } else if (current.type == 'search') {
-                                doSearch(lang, current.search);
-                            } else {
-                                doLoadPage(lang, target);
-                            }
-                        });
-                        div.appendChild(button);
-                    });
-                    $('body').append(div);
-                    var menu = new WinJS.UI.Menu(div, {
-                        anchor: $('#readInCmd')[0]
-                    });
-                    menu.show();
+                $(window).bind('resize', function () {
+                    sizeContent();
                 });
-            });
+                $(window).resize();
 
-            app.start();
-        };
-    });
+                $('#appbar').bind('beforeshow', function () {
+                    var lang = state.current().lang,
+                        title = state.current().title;
+                    if (state.current().type == 'article') {
+                        if (Windows.UI.StartScreen.SecondaryTile.exists(tileId(lang, title))) {
+                            $("#pinCmd").hide();
+                            $("#unpinCmd").show();
+                        } else {
+                            $("#unpinCmd").hide();
+                            $("#pinCmd").show();
+                        }
+                        $('#findCmd').show();
+                    } else {
+                        $('#pinCmd').hide();
+                        $('#unpinCmd').hide();
+                        $('#findCmd').hide();
+                    }
+                });
+
+                $('#pinCmd').click(function () {
+                    var lang = state.current().lang,
+                        title = state.current().title.replace(/_/g, ' '),
+                        shortName = title,
+                        displayName = title + ' - Wikipedia',
+                        tileOptions = Windows.UI.StartScreen.TileOptions.showNameOnLogo,
+                        uriLogo = new Windows.Foundation.Uri("ms-appx:///images/secondary-tile.png"),
+                        tileActivationArguments = "lang=" + lang + '&' + 'title=' + encodeURIComponent(title),
+                        tile = new Windows.UI.StartScreen.SecondaryTile(tileId(lang, title), shortName, displayName, tileActivationArguments, tileOptions, uriLogo);
+
+                    var element = document.getElementById("pinCmd"),
+                        selectionRect = element.getBoundingClientRect();
+                    tile.requestCreateAsync({ x: selectionRect.left, y: selectionRect.top }).then(function (isCreated) {
+                        if (isCreated) {
+                            console.log('tile is created');
+                            // Secondary tile successfully pinned.
+                        } else {
+                            console.log('tile is not created');
+                            // Secondary tile not pinned.
+                        }
+                    });
+                });
+
+                $('#unpinCmd').click(function () {
+                    var lang = state.current().lang,
+                        title = state.current().title.replace(/_/g, ' '),
+                        tile = Windows.UI.StartScreen.SecondaryTile(tileId(lang, title)),
+                        element = document.getElementById("unpinCmd"),
+                        selectionRect = element.getBoundingClientRect();
+                    tile.requestDeleteAsync({ x: selectionRect.left, y: selectionRect.top });
+                });
+
+                $('#browserCmd').click(function () {
+                    var url = articleUrl(state.current().lang, state.current().title),
+                        uri = new Windows.Foundation.Uri(url);
+                    Windows.System.Launcher.launchUriAsync(uri);
+                });
+
+                $('#readInCmd').click(function () {
+                    var current = state.current(),
+                        title = current.title,
+                        lang = current.lang,
+                        promise;
+                    if (current.type == 'article') {
+                        promise = getLanguageLinks(lang, title);
+                    } else {
+                        promise = getWikiLanguageLinks(lang);
+                    }
+                    promise.then(function (langlinks) {
+                        var div = document.createElement('div');
+                        langlinks.forEach(function (langlink) {
+                            var lang = langlink.lang,
+                                target = langlink.target,
+                                label = langlink.title + ' (' + lang + ')',
+                                button = document.createElement('button'),
+                                command = new WinJS.UI.MenuCommand(button, {
+                                    label: label
+                                });
+                            command.addEventListener('click', function () {
+                                if (current.type == 'hub') {
+                                    initHub(lang);
+                                } else if (current.type == 'search') {
+                                    doSearch(lang, current.search);
+                                } else {
+                                    doLoadPage(lang, target);
+                                }
+                            });
+                            div.appendChild(button);
+                        });
+                        $('body').append(div);
+                        var menu = new WinJS.UI.Menu(div, {
+                            anchor: $('#readInCmd')[0]
+                        });
+                        menu.show();
+                    });
+                });
+
+                var reader = document.getElementById('reader');
+                var range = document.body.createTextRange();
+                function findNext(backwards) {
+                    var query = $('#find-input').val();
+                    if (query !== '') {
+                        var toStart = (backwards),
+                            opt = (backwards ? 1 : 0),
+                            count = (backwards ? -1000000 : 1000000);
+                        range.collapse(toStart);
+                        if (range.findText(query, count, 0)) {
+                            try {
+                                range.select();
+                            } catch (e) {
+                                console.log(e);
+                            }
+                        }
+                    }
+                }
+                $('#findCmd').click(function () {
+                    $('#appbar')[0].winControl.hide();
+                    $('#find-bar').show();
+
+                    // Have to disable app-wide search to input here
+                    Windows.ApplicationModel.Search.SearchPane.getForCurrentView().showOnKeyboardInput = false;
+                    range = document.body.createTextRange();
+                    // @fixme make a range only within the content area
+                    range.collapse();
+                    $('#find-input').focus();
+                });
+                $('#find-input').bind('keydown', function (event) {
+                    // Don't let keys go through to document, eg backspace handler
+                    event.stopPropagation();
+                });
+                $('#find-input').bind('keypress', function (event) {
+                    if (event.keyCode == 13) {
+                        event.preventDefault();
+                        findNext();
+                    } else if (event.keyCode == 27) {
+                        event.preventDefault();
+                        $('#find-close').click();
+                    }
+                });
+                $('#find-prev').click(function () {
+                    findNext(true);
+                });
+                $('#find-next').click(function () {
+                    findNext();
+                });
+                $('#find-close').click(function () {
+                    $('#find-bar').hide();
+                    Windows.ApplicationModel.Search.SearchPane.getForCurrentView().showOnKeyboardInput = true;
+                });
+
+                beenInitialized = true;
+                complete();
+            }
+        });
+    }
 
     function getLanguageLinks(lang, title) {
         var url = 'https://' + lang + '.wikipedia.org/w/api.php';
@@ -357,22 +445,28 @@
 
     app.onactivated = function (eventObject) {
         var detail = eventObject.detail;
-        if (detail.kind === Windows.ApplicationModel.Activation.ActivationKind.launch) {
-            if (detail.previousExecutionState !== Windows.ApplicationModel.Activation.ApplicationExecutionState.terminated) {
-                // TODO: This application has been newly launched. Initialize C:\Users\brion\src\wiki\WikipediaMetroTest\WikipediaMetroTest\js\default.js
-                // your application here.
-            } else {
-                // TODO: This application has been reactivated from suspension. 
-                // Restore application state here.
-            }
-            if (detail.arguments != '') {
-                console.log(detail.arguments);
-                var args = parseArgs(detail.arguments);
-                doLoadPage(args.lang, args.title);
-            }
-        } else if (detail.kind === Windows.ApplicationModel.Activation.ActivationKind.search) {
-            doSearch(state.current().lang, detail.queryText);
-        }
+        var activate = new WinJS.Promise(function (complete, err, prog) {
+            setupApp().then(function () {
+                if (detail.kind === Windows.ApplicationModel.Activation.ActivationKind.launch) {
+                    if (detail.arguments != '') {
+                        var args = parseArgs(detail.arguments);
+                        doLoadPage(args.lang, args.title);
+                    }
+                } else if (detail.kind === Windows.ApplicationModel.Activation.ActivationKind.search) {
+                    doSearch(state.current().lang, detail.queryText);
+                } else if (detail.kind === Windows.ApplicationModel.Activation.ActivationKind.shareTarget) {
+                    var shareOp = detail.shareOperation;
+                    shareOp.data.getTextAsync().done(function (text) {
+                        doLoadPage(state.current().lang, text);
+                        sizeContent();
+                    });
+                    // @fixme report complete at some point?
+                }
+
+                complete();
+            });
+        });
+        eventObject.setPromise(activate);
     };
     
     app.oncheckpoint = function (eventObject) {
@@ -383,9 +477,11 @@
         // asynchronous operation before your application is suspended, call
         // eventObject.setPromise(). 
     };
+    app.start();
 
     // Obtain the Search Pane object and register for handling search while running as the main application
     var searchPane = Windows.ApplicationModel.Search.SearchPane.getForCurrentView();
+    searchPane.showOnKeyboardInput = true;
     searchPane.addEventListener("querysubmitted", function (e) {
         console.log('querysubmitted', e);
         doLoadPage(state.current().lang, e.queryText);
@@ -475,7 +571,7 @@
                 //   totalhits
                 if (data.error) {
                     // ..
-                    $("#content").text('Search error');
+                    $("#subcontent").text('Search error');
                 } else {
                     // Replace the current list
                     var list = SearchResults.itemList;
@@ -515,7 +611,7 @@
         $('#hub').hide();
         $('#back').show();
         clearSearch();
-        $('#content').empty();
+        $('#subcontent').empty();
         $('#title').text(title.replace(/_/g, ' '));
         $('#reader').show();
         sizeContent();
@@ -553,13 +649,16 @@
                     ]
 
                 */
-                $('#content').empty();
+                $('#content')
+                    .attr('lang', lang)
+                    .attr('dir', langIsRtl(lang) ? 'rtl' : 'ltr');
+                $('#subcontent').empty()
                 TocSections.itemList.splice(0, TocSections.itemList.length); // clear
                 data.mobileview.sections.forEach(function (section) {
                     if (!section.text) {
                         return;
                     }
-                    var div = insertWikiHtml('#content', section.text);
+                    var div = insertWikiHtml('#subcontent', section.text);
                     if (section.id == 0) {
                         TocSections.itemList.push({
                             title: title.replace(/_/g, ' '),
@@ -575,7 +674,11 @@
                         });
                     }
                 });
-                $('#content').append('<div class="column-spacer"></div>');
+                $('#subcontent').append('<div class="column-spacer"></div>');
+                WinJS.UI.Animation.enterPage($('#content')[0], 40).done(function () {
+                    // Set focus to allow keyboard scrolling
+                    $('#content').focus();
+                });
             },
             error: function (xhr, status, err) {
                 $('#spinner').hide();
@@ -592,9 +695,22 @@
             title = state.current().title,
             lang = state.current().lang,
             url = articleUrl(state.current().lang, title);
-        request.data.setUri(new Windows.Foundation.Uri(url));
-        request.data.properties.title = title + ' - Wikipedia';
-        request.data.properties.description = 'Link to Wikipedia article';
+        // Check for selection...
+        var selection = document.getSelection();
+        if (selection.isCollapsed) {
+            // No active selection; send the article URL
+            request.data.setUri(new Windows.Foundation.Uri(url));
+            request.data.properties.title = title + ' - Wikipedia';
+            request.data.properties.description = 'Link to Wikipedia article'; // @fixme l10n
+        } else {
+            // Active selection; send the text.
+            var range = selection.getRangeAt(0);
+            var fragment = range.cloneContents();
+            var text = $(fragment).text();
+            request.data.setText(text);
+            request.data.properties.title = 'Content from ' + title + ' - Wikipedia';
+            request.data.properties.description = 'Text from Wikipedia article'; // @fixme l10n
+        }
     });
 
     function articleUrl(lang, title) {
@@ -780,6 +896,58 @@
         });
     }
 
+    function largeImage(url) {
+        // This is a quick hack, which should work well enough for featured photos.
+        // Others may not scale up properly...
+        var matches = /^(.*\/)(\d+)+(px-[^/]*)$/.exec(url);
+        if (matches) {
+            var prefix = matches[1],
+                width = parseInt(matches[2]),
+                suffix = matches[3],
+                double = width * 2,
+                newUrl = prefix + double + suffix;
+            console.log(url);
+            console.log(newUrl);
+            return newUrl;
+        } else {
+            // Unrecognized image format
+            return url;
+        }
+    }
+
+    /**
+     * @param {Image} image
+     * @return {String} URL
+     */
+    function makeFitImage(image, width, height) {
+        var $canvas = $('<canvas>').attr('width', width).attr('height', height),
+            canvas = $canvas[0],
+            ctx = canvas.getContext('2d');
+        // hack hack
+        if (width > image.width) {
+            width = image.width;
+        }
+        if (height > image.height) {
+            height = image.height;
+        }
+        ctx.drawImage(image,
+            // source
+            Math.floor((image.width - width) / 2), Math.floor((image.height - height) / 2), width, height,
+            // dest
+            0, 0, width, height
+        );
+        return canvas.toDataURL();
+    }
+
+    /**
+     * @param {Image} image
+     * @return {String} URL
+     */
+    function makeSquareImage(image) {
+        var size = Math.min(image.width, image.height);
+        return makeFitImage(image, size, size);
+    }
+
     function initHub(lang) {
         doShowHub(lang);
 
@@ -805,6 +973,8 @@
                 if (nErrors) {
                     $('#offline').show();
                 }
+                // Set focus for keyboard scrolling
+                $('#hub-list').focus();
             }
         };
 
@@ -838,19 +1008,28 @@
                     if (image.substr(0, 2) == '//') {
                         image = 'https:' + image;
                     }
+                    image = largeImage(image);
                 } else {
                     image = '/images/secondary-tile.png';
                 }
                 nItems++;
-                list.push({
+                var listItem = {
                     title: title,
                     heading: '',
                     snippet: stripHtmlTags(html).substr(0, 100) + '...',
-                    image: image,
+                    image: '#',
                     group: 'Featured articles',
                     groupText: mediaWiki.message('section-featured-articles').plain(),
                     style: (index < 1) ? 'featured-item large' : 'featured-item'
-                });
+                };
+                list.push(listItem);
+                var preload = new Image();
+                preload.src = image;
+                preload.onload = function () {
+                    var squared = makeSquareImage(preload);
+                    listItem.image = squared;
+                    document.getElementById('hub-list').winControl.forceLayout();
+                };
             });
             completeAnother();
         });
@@ -864,7 +1043,10 @@
                     $links = $html.find('a'),
                     $imgs = $html.find('img'),
                     title = '',
-                    image = '';
+                    image = '',
+                    imageStyle = '',
+                    imageWidth = 0,
+                    imageHeight = 0;
                 for (var i = 0; i < $links.length; i++) {
                     var $link = $($links[i]);
                     if ($link.find('img').length) {
@@ -884,23 +1066,58 @@
                     if (image.substr(0, 2) == '//') {
                         image = 'https:' + image;
                     }
+                    image = image;
+                    var width = parseFloat($imgs.attr('width')),
+                        height = parseFloat($imgs.attr('height'));
+                    if (index == 0) {
+                        image = largeImage(image);
+                        width *= 2;
+                        height *= 2;
+                        var aspect = width / height;
+                        if (aspect > (3 / 2)) {
+                            // wider than 3:2
+                            imageHeight = height;
+                            imageWidth = Math.floor(height * 3 / 2);
+                            imageStyle = 'wide';
+                        } else if (aspect >= 1 && aspect <= (3 / 2)) {
+                            // between 1:1 and 3:2
+                            imageWidth = width;
+                            imageHeight = Math.floor(width * 2 / 3);
+                            imageStyle = 'wide';
+                        } else if (aspect < 1 && aspect >= (2 / 3)) {
+                            // between 2:3 and 1:1
+                            imageWidth = Math.floor(width * 2 / 3);
+                            imageHeight = height;
+                            imageStyle = 'tall';
+                        } else {
+                            // taller than 2:3
+                            imageWidth = width;
+                            imageHeight = Math.floor(width * 3 / 2);
+                            imageStyle = 'tall';
+                        }
+                    } else {
+                        imageWidth = Math.min(width, height);
+                        imageHeight = Math.min(width, height);
+                    }
                 }
-                var imageid = ("img" + Math.random()).replace('.', '');
                 nItems++;
-                list.push({
+                var listItem = {
                     title: title,
                     heading: '',
                     snippet: '',
-                    image: image,
-                    imageid: imageid,
+                    image: '#',
                     group: 'Featured pictures',
                     groupText: mediaWiki.message('section-featured-pictures').plain(),
-                    style: (index == 0) ? 'photo-item large' : 'photo-item'
-                });
-
-                //fetchImage(state.current().lang, image, 600, 600, function (img) {
-                //    $('#' + imageid).attr('src', img);
-                //});
+                    style: (index == 0) ? ('photo-item large ' + imageStyle) : 'photo-item'
+                };
+                list.push(listItem);
+                var preload = new Image();
+                preload.src = image;
+                preload.onload = function () {
+                    var fit = makeFitImage(preload, imageWidth, imageHeight);
+                    listItem.image = fit;
+                    document.getElementById('hub-list').winControl.forceLayout();
+                };
             });
             completeAnother();
         });
@@ -959,8 +1176,8 @@
     function sizeContent() {
         var $work, fudge;
 
-        // Hack to swap orientation in snapped mode
-        if (window.innerWidth <= 320) {
+        // Hack to swap orientation in snapped or share mode
+        if (window.innerWidth <= 700) {
             // Snapped
             $('#toc')[0].winControl.layout = new WinJS.UI.ListLayout();
             $('#hub-list')[0].winControl.layout = new WinJS.UI.ListLayout({
@@ -975,19 +1192,26 @@
             });
         }
 
-        if ($('#hub').is(':visible')) {
-            $work = $('#hub-list');
-            fudge = 0;
-        } else {
-            //$work = $('#content, #toc');
-            $work = $('#semanticZoomer');
-            fudge = 60;
-        }
         var top = 150;
-        //var top = $work.position().top; // sometimes wrong during switch???
-        var h = $(window).height() - top - fudge;
-        //$('#semanticZoomer').css('height', $(window).height() - top);
-        $work.css('height', h + 'px');
+        var h = $(window).height() - top;
+        if ($('#hub').is(':visible')) {
+            $('#hub-list').css('height', (h + 20) + 'px');
+        } else {
+            $('#semanticZoomer').css('height', h + 'px')
+            $('#subcontent').css('height', (h - 80) + 'px');
+        }
+
+        // Size header to fit
+        var $title = $('#title');
+        var px = 60;
+        $title.css('font-size', px + 'px');
+        while ($title.height() > 90) {
+            px -= 5;
+            if (px < 10) {
+                break;
+            }
+            $title.css('font-size', px + 'px');
+        }
     }
 
     function showLightbox(element, className) {
@@ -1049,6 +1273,10 @@
     }
 
     function doGoBack() {
+        if (state.stack.length < 2) {
+            // Nowhere left to go...
+            return;
+        }
         var discard = state.pop(),
             redo = state.pop();
         if (redo.type == 'hub') {
@@ -1099,11 +1327,17 @@
         });
         menu.show();
     }
+
+    function langIsRtl(lang) {
+        var rtls = ['ar', 'arc', 'arz', 'ckb', 'dv', 'fa', 'he', 'kwh', 'ks', 'mzn', 'pnb', 'ps', 'sd', 'ug', 'ur', 'yi'];
+        return (rtls.indexOf(lang) != -1);
+    }
+
 })();
 function groupInfo() {
     return {
         enableCellSpanning: true,
-        cellWidth: 50,
-        cellHeight: 80
+        cellWidth: 150,
+        cellHeight: 150
     };
 }

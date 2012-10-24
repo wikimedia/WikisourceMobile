@@ -82,7 +82,7 @@
 				<label for="fontSizeSelector"><msg key="settings-font-size-label"></msg></label>
 				<select id="fontSizeSelector">
 					{{#fontSizes}}
-					<option value="{{value}}">{{name}}</option>
+					<option value="{{value}}">{{value}}</option>
 					{{/fontSizes}}
 				</select>
 			</div>
@@ -146,7 +146,7 @@
 			{{#sections}}
 			<div class="section">
 				<h{{level}} class="section_heading" id="section_{{id}}" data-section-id="{{id}}">{{{line}}} <button></button></h{{level}}>
-				<div class="content_block" id="content_{{id}}">
+				<div class="content_block" id="content_{{id}}" {{#references}}data-populated="true"{{/references}}>
 					{{#references}}
 						{{{text}}}
 					{{/references}}
