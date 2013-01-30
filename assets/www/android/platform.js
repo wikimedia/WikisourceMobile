@@ -2,6 +2,11 @@
 
 // @todo migrate menu setup in here?
 
+// set Android 2.x to HTTP
+if(navigator.userAgent.match(/Android 2/g)) {
+	window.PROTOCOL = 'http';
+}
+//
 // @Override
 // navigator.lang always returns 'en' on Android
 // use the Globalization plugin to request the proper value
@@ -20,7 +25,7 @@ l10n.navigatorLang = function(success) {
 }
 
 function getAboutVersionString() {
-	return "1.3beta1";
+	return "1.0";
 }
 
 (function() {
@@ -36,7 +41,7 @@ function getAboutVersionString() {
 })();
 
 function setMenuItemState(action, state) {
-	window.plugins.SimpleMenu.setMenuState(action, state, function() {}, function() {});
+	window.SimpleMenu.setMenuState(action, state, function() {}, function() {});
 }
 
 function setPageActionsState(state) {
@@ -56,6 +61,11 @@ chrome.scrollTo = function(selector, posY) {
 }
 
 chrome.addPlatformInitializer(function() {
+
+	if( window.cordovaAlwaysEnableNativeWebSQLShim !== true ) {
+		throw "You upgraded cordova but forgot to add back / fix the websql shim!";
+	}
+
 	if ($('html').hasClass('android-2')) {
 		// Android 2.2/2.3 doesn't do overflow:scroll
 		// so we need to engage alternate styles for phone view.
@@ -79,11 +89,11 @@ chrome.addPlatformInitializer(function() {
 		$('#searchParam').focus().addClass('active');
 		$('#searchParam').bind('blur', function() {
 			  $('#searchParam').removeClass('active');
-			  plugins.SoftKeyBoard.hide();
+			  window.SoftKeyBoard.hide();
 			  $('#searchParam').unbind('blur');
 		});
 		
-		plugins.SoftKeyBoard.show();
+		window.SoftKeyBoard.show();
 		
 	}
 
@@ -94,7 +104,7 @@ chrome.addPlatformInitializer(function() {
 	var origLoadFirstPage = chrome.loadFirstPage;
 	chrome.loadFirstPage = function() {
 		var d = $.Deferred();
-		plugins.webintent.getIntentData(function(args) {
+		window.webintent.getIntentData(function(args) {
 			if(args.action == "android.intent.action.VIEW" && args.uri) {
 				app.navigateToPage(args.uri).done(function() {
 					d.resolve.apply(arguments);
@@ -102,7 +112,7 @@ chrome.addPlatformInitializer(function() {
 					d.reject.apply(arguments);
 				});
 			} else if(args.action == "android.intent.action.SEARCH") {
-				plugins.webintent.getExtra("query", 
+				window.webintent.getExtra("query",
 					function(query) {
 						search.performSearch(query, false).done(function() {
 							d.resolve.apply(arguments);
@@ -125,7 +135,7 @@ chrome.addPlatformInitializer(function() {
 	};
 
 	// Used only if we switch to singleTask
-	plugins.webintent.onNewIntent(function(args) {
+	window.webintent.onNewIntent(function(args) {
 		if(args.uri !== null) {
 			app.navigateToPage(args.uri);
 		}
@@ -140,7 +150,7 @@ function sharePage() {
 	// @fixme if we don't have a page loaded, this menu item should be disabled...
 	var title = app.getCurrentTitle(),
 		url = app.getCurrentUrl().replace(/\.m\.wikisource/, '.wikisource');
-	window.plugins.share.show(
+	window.share.show(
 		{
 			subject: title,
 			text: url
@@ -152,7 +162,7 @@ chrome.showNotification = function(text) {
 	// Using PhoneGap-Toast plugin for Android's lightweight "Toast" style notifications.
 	// https://github.com/m00sey/PhoneGap-Toast
 	// http://developer.android.com/guide/topics/ui/notifiers/toasts.html
-	window.plugins.ToastPlugin.show_short(text);
+	window.ToastPlugin.show_short(text);
 }
 
 function updateMenuState() {
@@ -176,7 +186,7 @@ function updateMenuState() {
 		$command.attr('label', label);
 	});
 
-	window.plugins.SimpleMenu.loadMenu($('#appMenu')[0],
+	window.SimpleMenu.loadMenu($('#appMenu')[0],
 									   menu_handlers,
 									   function(success) {
 										   console.log(success);
@@ -189,18 +199,8 @@ function updateMenuState() {
 	return d;
 };
 
-//@Override
-app.setCaching = function(enabled, success) {
-	console.log('setting cache to ' + enabled);
-	if(enabled) {
-		window.plugins.CacheMode.setCacheMode('LOAD_CACHE_ELSE_NETWORK', success);
-	} else {
-		window.plugins.CacheMode.setCacheMode('LOAD_DEFAULT', success);
-	}
-}
-
 window.preferencesDB.addOnSet(function(id, value) {
-	window.plugins.preferences.set(id, value, function(){}, function(){});
+	window.preferences.set(id, value, function(){}, function(){});
 });
 
 savedPages.doSave = function(options) {
@@ -212,7 +212,7 @@ savedPages.doSave = function(options) {
 		$('#main img').each(function() {
 			var em = $(this);
 			var target = this.src.replace('file:', 'https:');
-			window.plugins.urlCache.getCachedPathForURI(target,
+			window.urlCache.getCachedPathForURI(target,
 				function(imageFile) {
 					em.attr('src', 'file://' + imageFile.file);
 				},
@@ -240,7 +240,7 @@ savedPages.doSave = function(options) {
 		populateSectionDeferreds.push( chrome.populateSection( section.id ) );
 	});
 	$.when.apply( $, populateSectionDeferreds ).done( function() {
-		window.plugins.urlCache.getCachedPathForURI( page.getAPIUrl(), gotPath, gotError );
+		window.urlCache.getCachedPathForURI( page.getAPIUrl(), gotPath, gotError );
 	});
 	return d;
 }
@@ -256,7 +256,7 @@ app.loadCachedPage = function( url, title, lang ) {
 				em.attr( 'src', 'file://' + linkPath.file );
 			}
 			var target = this.src.replace( 'file:', window.PROTOCOL + ':' );
-			window.plugins.urlCache.getCachedPathForURI( target, gotLinkPath, gotError );
+			window.urlCache.getCachedPathForURI( target, gotLinkPath, gotError );
 		});
 	};
 	var gotPath = function( cachedPage ) {
@@ -271,6 +271,6 @@ app.loadCachedPage = function( url, title, lang ) {
 		console.log( 'Error: ' + error );
 		chrome.hideSpinner();
 	}
-	window.plugins.urlCache.getCachedPathForURI( url, gotPath, gotError );
+	window.urlCache.getCachedPathForURI( url, gotPath, gotError );
 	return d;
 }
